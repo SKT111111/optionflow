@@ -26,7 +26,7 @@ st.set_page_config(
 
 # =========================================================
 # 日本語フォント設定
-# 1本だけ同梱して使う
+# 同梱フォントを1本だけ使う
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent
 FONT_PATH = BASE_DIR / "fonts" / "NotoSansJP-Regular.ttf"
@@ -37,7 +37,7 @@ def setup_japanese_font():
     同梱フォントをMatplotlibに登録する。
     戻り値:
         font_name: 認識されたフォント名 or None
-        font_found: True/False
+        font_found: True / False
     """
     if FONT_PATH.exists():
         fm.fontManager.addfont(str(FONT_PATH))
@@ -46,7 +46,6 @@ def setup_japanese_font():
         matplotlib.rcParams["axes.unicode_minus"] = False
         return font_name, True
 
-    # フォントが無い場合の最低限フォールバック
     matplotlib.rcParams["font.family"] = ["DejaVu Sans"]
     matplotlib.rcParams["axes.unicode_minus"] = False
     return None, False
@@ -611,7 +610,7 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
     else:
         global_ylim = None
 
-    fig, axes = plt.subplots(1, len(PATTERNS), figsize=(20, 9), sharey=True)
+    fig, axes = plt.subplots(1, len(PATTERNS), figsize=(18, 8), sharey=True)
     axes[0].set_ylabel("Strike")
 
     summary_rows = []
@@ -680,7 +679,7 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
 # =========================================================
 def fig_to_png_bytes(fig):
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=130, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=110, bbox_inches="tight")
     buf.seek(0)
     return buf.getvalue()
 
@@ -734,8 +733,14 @@ else:
             png_bytes = fig_to_png_bytes(fig)
             csv_bytes = df_to_csv_bytes(summary_df)
 
-            # figはPNG化したらすぐ閉じる
+            # figure は bytes 化したら即閉じる
             plt.close(fig)
+
+            # download 用に session_state に保持
+            st.session_state["png_bytes"] = png_bytes
+            st.session_state["csv_bytes"] = csv_bytes
+            st.session_state["symbol"] = symbol
+            st.session_state["timestamp"] = timestamp
 
             c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
@@ -745,7 +750,10 @@ else:
             with c3:
                 st.write(f"生成時刻: {timestamp}")
 
-            st.image(png_bytes, caption=f"{symbol} GEX Profile", width="stretch")
+            st.image(
+                st.session_state["png_bytes"],
+                caption=f"{symbol} GEX Profile",
+            )
 
             st.subheader("集計テーブル")
             st.dataframe(summary_df, width="stretch")
@@ -754,16 +762,18 @@ else:
             with d1:
                 st.download_button(
                     label="画像をダウンロード (PNG)",
-                    data=png_bytes,
-                    file_name=f"{symbol}_gex_by_expiry_{timestamp}.png",
-                    mime="image/png"
+                    data=st.session_state["png_bytes"],
+                    file_name=f"{st.session_state['symbol']}_gex_by_expiry_{st.session_state['timestamp']}.png",
+                    mime="image/png",
+                    on_click="ignore"
                 )
             with d2:
                 st.download_button(
                     label="集計をダウンロード (CSV)",
-                    data=csv_bytes,
-                    file_name=f"{symbol}_summary_{timestamp}.csv",
-                    mime="text/csv"
+                    data=st.session_state["csv_bytes"],
+                    file_name=f"{st.session_state['symbol']}_summary_{st.session_state['timestamp']}.csv",
+                    mime="text/csv",
+                    on_click="ignore"
                 )
 
     except Exception as e:
