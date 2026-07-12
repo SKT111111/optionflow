@@ -4,6 +4,7 @@ from datetime import datetime
 import numpy as np
 import pandas as pd
 from scipy.stats import norm
+from scipy.stats import norm
 
 import matplotlib
 matplotlib.use("Agg")  # Streamlit用
