@@ -1,13 +1,15 @@
 import io
+from pathlib import Path
 from datetime import datetime
 
 import numpy as np
 import pandas as pd
 
 import matplotlib
-matplotlib.use("Agg")  # Streamlit用
+matplotlib.use("Agg")  # Streamlit用の非GUIバックエンド
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
+import matplotlib.font_manager as fm
 
 import streamlit as st
 
@@ -21,9 +23,58 @@ st.set_page_config(
     layout="wide"
 )
 
-# ---- 日本語フォント設定 ----
-matplotlib.rcParams["font.family"] = ["Meiryo", "Yu Gothic", "MS Gothic", "DejaVu Sans"]
-matplotlib.rcParams["axes.unicode_minus"] = False
+
+# =========================================================
+# 日本語フォント設定
+# =========================================================
+BASE_DIR = Path(__file__).resolve().parent
+FONT_DIR = BASE_DIR / "fonts"
+
+FONT_CANDIDATES = [
+    FONT_DIR / "NotoSansJP-Regular.ttf",
+    FONT_DIR / "NotoSansJP-Medium.ttf",
+    FONT_DIR / "NotoSansCJKjp-Regular.otf",
+    FONT_DIR / "IPAexGothic.ttf",
+    FONT_DIR / "ipag.ttf",
+]
+
+
+def setup_japanese_font():
+    """
+    同梱フォントをMatplotlibに登録して、日本語描画を安定させる。
+    戻り値: (font_name, found_flag, font_path_or_none)
+    """
+    font_name = None
+    found_font_path = None
+
+    for font_path in FONT_CANDIDATES:
+        if font_path.exists():
+            fm.fontManager.addfont(str(font_path))
+            font_name = fm.FontProperties(fname=str(font_path)).get_name()
+            found_font_path = font_path
+            break
+
+    if font_name is not None:
+        matplotlib.rcParams["font.family"] = font_name
+    else:
+        # フォールバック。環境依存で日本語が出ない可能性あり。
+        matplotlib.rcParams["font.family"] = [
+            "Noto Sans CJK JP",
+            "Noto Sans JP",
+            "IPAexGothic",
+            "IPAGothic",
+            "Yu Gothic",
+            "Meiryo",
+            "MS Gothic",
+            "DejaVu Sans",
+        ]
+
+    matplotlib.rcParams["axes.unicode_minus"] = False
+
+    return font_name, found_font_path is not None, found_font_path
+
+
+FONT_NAME, FONT_FOUND, FONT_PATH = setup_japanese_font()
 
 
 # =========================================================
@@ -41,7 +92,7 @@ PATTERNS = [
 
 
 # =========================================================
-# アップロードファイル読み込み
+# 入力読み込み
 # =========================================================
 def read_uploaded_table(uploaded_file):
     name = uploaded_file.name.lower()
@@ -183,7 +234,7 @@ def flow_full(ask, bid, mid):
 
 
 # =========================================================
-# 正規分布PDF（scipy代替）
+# 正規分布PDF（scipy不要）
 # =========================================================
 def norm_pdf(x):
     return np.exp(-0.5 * x * x) / np.sqrt(2.0 * np.pi)
@@ -534,7 +585,7 @@ def plot_panel(
 
 
 # =========================================================
-# 図と集計表を作る
+# 図と集計表の生成
 # =========================================================
 def build_figure_and_summary(df, top_n, risk_free, div_yield):
     S = float(df["Price~"].iloc[0])
@@ -603,7 +654,6 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
         put_walls = pdata["put_walls"]
         hvl = pdata["hvl"]
         total = pdata["total"]
-        atm = pdata["atm"]
         spot_flow = pdata["spot_flow"]
         spot_flow_full = pdata["spot_flow_full"]
 
@@ -680,6 +730,15 @@ with st.sidebar:
     top_n = st.slider("表示する Wall の本数", min_value=1, max_value=5, value=3, step=1)
     risk_free = st.number_input("無リスク金利", value=DEFAULT_RISK_FREE, step=0.005, format="%.4f")
     div_yield = st.number_input("配当利回り", value=DEFAULT_DIV_YIELD, step=0.005, format="%.4f")
+
+    st.divider()
+    st.subheader("フォント状態")
+    if FONT_FOUND:
+        st.success(f"日本語フォント読込済み: {FONT_NAME}")
+        st.caption(f"{FONT_PATH.name}")
+    else:
+        st.warning("同梱日本語フォントが見つかりません。画像内日本語が文字化けする可能性があります。")
+        st.caption("fonts/NotoSansJP-Regular.ttf などを配置してください。")
 
 uploaded_file = st.file_uploader(
     "ここに CSV / Excel をドラッグ＆ドロップ",
