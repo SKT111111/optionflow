@@ -330,61 +330,37 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
         a, b, m = flow_detail(sub_raw, k, "Call")
         fl = flow_short(a, b, m)
 
-        if j == 1:
-            items.append({
-                "key": f"cw{j}",
-                "y": k,
-                "text": f"CW {k:.1f} [{fl}]",
-                "color": "#006400",
-                "linecolor": "#006400",
-                "linewidth": 2.0,
-                "linestyle": "-",
-                "fontsize": 7.2,
-            })
-        else:
-            items.append({
-                "key": f"cw{j}",
-                "y": k,
-                "text": f"CW{j} {k:.1f} [{fl}]",
-                "color": "#2ca02c",
-                "linecolor": "#2ca02c",
-                "linewidth": 1.1,
-                "linestyle": ":",
-                "fontsize": 6.6,
-            })
+        items.append({
+            "key": f"cw{j}",
+            "y": k,
+            "text": f"CW{j}: {k:.1f} [{fl}]",
+            "color": "#006400" if j == 1 else "#2ca02c",
+            "linecolor": "#006400" if j == 1 else "#2ca02c",
+            "linewidth": 2.0 if j == 1 else 1.1,
+            "linestyle": "-" if j == 1 else ":",
+            "fontsize": 7.2 if j == 1 else 6.6,
+        })
 
     for j, (k, g) in enumerate(put_walls, 1):
         a, b, m = flow_detail(sub_raw, k, "Put")
         fl = flow_short(a, b, m)
 
-        if j == 1:
-            items.append({
-                "key": f"pw{j}",
-                "y": k,
-                "text": f"PW {k:.1f} [{fl}]",
-                "color": "#8b0000",
-                "linecolor": "#8b0000",
-                "linewidth": 2.0,
-                "linestyle": "-",
-                "fontsize": 7.2,
-            })
-        else:
-            items.append({
-                "key": f"pw{j}",
-                "y": k,
-                "text": f"PW{j} {k:.1f} [{fl}]",
-                "color": "#d62728",
-                "linecolor": "#d62728",
-                "linewidth": 1.1,
-                "linestyle": ":",
-                "fontsize": 6.6,
-            })
+        items.append({
+            "key": f"pw{j}",
+            "y": k,
+            "text": f"PW{j}: {k:.1f} [{fl}]",
+            "color": "#8b0000" if j == 1 else "#d62728",
+            "linecolor": "#8b0000" if j == 1 else "#d62728",
+            "linewidth": 2.0 if j == 1 else 1.1,
+            "linestyle": "-" if j == 1 else ":",
+            "fontsize": 7.2 if j == 1 else 6.6,
+        })
 
     if hvl is not None:
         items.append({
             "key": "hvl",
             "y": hvl,
-            "text": f"HVL {hvl:.1f}",
+            "text": f"HVL: {hvl:.1f}",
             "color": "#1f77b4",
             "linecolor": "#1f77b4",
             "linewidth": 2.0,
@@ -395,7 +371,7 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
     items.append({
         "key": "spot",
         "y": S,
-        "text": f"Spot {S:.2f} [ATM近傍: {spot_flow}]",
+        "text": f"Spot: {S:.2f} [ATM近傍: {spot_flow}]",
         "color": "black",
         "linecolor": "black",
         "linewidth": 1.8,
@@ -733,10 +709,8 @@ else:
             png_bytes = fig_to_png_bytes(fig)
             csv_bytes = df_to_csv_bytes(summary_df)
 
-            # figure は bytes 化したら即閉じる
             plt.close(fig)
 
-            # download 用に session_state に保持
             st.session_state["png_bytes"] = png_bytes
             st.session_state["csv_bytes"] = csv_bytes
             st.session_state["symbol"] = symbol
