@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 import matplotlib
-matplotlib.use("Agg")  # Streamlit用の非GUIバックエンド
+matplotlib.use("Agg")  # Streamlit向けの非GUIバックエンド
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import matplotlib.font_manager as fm
@@ -26,55 +26,33 @@ st.set_page_config(
 
 # =========================================================
 # 日本語フォント設定
+# 1本だけ同梱して使う
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent
-FONT_DIR = BASE_DIR / "fonts"
-
-FONT_CANDIDATES = [
-    FONT_DIR / "NotoSansJP-Regular.ttf",
-    FONT_DIR / "NotoSansJP-Medium.ttf",
-    FONT_DIR / "NotoSansCJKjp-Regular.otf",
-    FONT_DIR / "IPAexGothic.ttf",
-    FONT_DIR / "ipag.ttf",
-]
+FONT_PATH = BASE_DIR / "fonts" / "NotoSansJP-Regular.ttf"
 
 
 def setup_japanese_font():
     """
-    同梱フォントをMatplotlibに登録して、日本語描画を安定させる。
-    戻り値: (font_name, found_flag, font_path_or_none)
+    同梱フォントをMatplotlibに登録する。
+    戻り値:
+        font_name: 認識されたフォント名 or None
+        font_found: True/False
     """
-    font_name = None
-    found_font_path = None
-
-    for font_path in FONT_CANDIDATES:
-        if font_path.exists():
-            fm.fontManager.addfont(str(font_path))
-            font_name = fm.FontProperties(fname=str(font_path)).get_name()
-            found_font_path = font_path
-            break
-
-    if font_name is not None:
+    if FONT_PATH.exists():
+        fm.fontManager.addfont(str(FONT_PATH))
+        font_name = fm.FontProperties(fname=str(FONT_PATH)).get_name()
         matplotlib.rcParams["font.family"] = font_name
-    else:
-        # フォールバック。環境依存で日本語が出ない可能性あり。
-        matplotlib.rcParams["font.family"] = [
-            "Noto Sans CJK JP",
-            "Noto Sans JP",
-            "IPAexGothic",
-            "IPAGothic",
-            "Yu Gothic",
-            "Meiryo",
-            "MS Gothic",
-            "DejaVu Sans",
-        ]
+        matplotlib.rcParams["axes.unicode_minus"] = False
+        return font_name, True
 
+    # フォントが無い場合の最低限フォールバック
+    matplotlib.rcParams["font.family"] = ["DejaVu Sans"]
     matplotlib.rcParams["axes.unicode_minus"] = False
+    return None, False
 
-    return font_name, found_font_path is not None, found_font_path
 
-
-FONT_NAME, FONT_FOUND, FONT_PATH = setup_japanese_font()
+FONT_NAME, FONT_FOUND = setup_japanese_font()
 
 
 # =========================================================
@@ -363,7 +341,6 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
                 "linewidth": 2.0,
                 "linestyle": "-",
                 "fontsize": 7.2,
-                "fontweight": "bold",
             })
         else:
             items.append({
@@ -375,7 +352,6 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
                 "linewidth": 1.1,
                 "linestyle": ":",
                 "fontsize": 6.6,
-                "fontweight": "normal",
             })
 
     for j, (k, g) in enumerate(put_walls, 1):
@@ -392,7 +368,6 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
                 "linewidth": 2.0,
                 "linestyle": "-",
                 "fontsize": 7.2,
-                "fontweight": "bold",
             })
         else:
             items.append({
@@ -404,7 +379,6 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
                 "linewidth": 1.1,
                 "linestyle": ":",
                 "fontsize": 6.6,
-                "fontweight": "normal",
             })
 
     if hvl is not None:
@@ -417,7 +391,6 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
             "linewidth": 2.0,
             "linestyle": "--",
             "fontsize": 8.0,
-            "fontweight": "bold",
         })
 
     items.append({
@@ -429,7 +402,6 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
         "linewidth": 1.8,
         "linestyle": ":",
         "fontsize": 7.2,
-        "fontweight": "bold",
     })
 
     return items
@@ -531,7 +503,7 @@ def plot_panel(
             color=item["linecolor"],
             ls=item["linestyle"],
             lw=item["linewidth"],
-            alpha=0.95 if item["fontweight"] == "bold" else 0.72,
+            alpha=0.85,
             zorder=3,
             label=legend_label
         )
@@ -561,7 +533,6 @@ def plot_panel(
             ha="right",
             va="center",
             fontsize=item["fontsize"],
-            fontweight=item["fontweight"],
             color=item["color"],
             arrowprops=dict(
                 arrowstyle="-",
@@ -628,7 +599,6 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
             "put_walls": put_walls,
             "hvl": hvl,
             "total": total,
-            "atm": atm,
             "spot_flow": spot_flow,
             "spot_flow_full": spot_flow_full,
         })
@@ -641,7 +611,7 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
     else:
         global_ylim = None
 
-    fig, axes = plt.subplots(1, len(PATTERNS), figsize=(22, 10), sharey=True)
+    fig, axes = plt.subplots(1, len(PATTERNS), figsize=(20, 9), sharey=True)
     axes[0].set_ylabel("Strike")
 
     summary_rows = []
@@ -710,7 +680,7 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
 # =========================================================
 def fig_to_png_bytes(fig):
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    fig.savefig(buf, format="png", dpi=130, bbox_inches="tight")
     buf.seek(0)
     return buf.getvalue()
 
@@ -735,10 +705,10 @@ with st.sidebar:
     st.subheader("フォント状態")
     if FONT_FOUND:
         st.success(f"日本語フォント読込済み: {FONT_NAME}")
-        st.caption(f"{FONT_PATH.name}")
+        st.caption(FONT_PATH.name)
     else:
-        st.warning("同梱日本語フォントが見つかりません。画像内日本語が文字化けする可能性があります。")
-        st.caption("fonts/NotoSansJP-Regular.ttf などを配置してください。")
+        st.error("fonts/NotoSansJP-Regular.ttf が見つかりません")
+        st.caption("画像内日本語が文字化けする可能性があります")
 
 uploaded_file = st.file_uploader(
     "ここに CSV / Excel をドラッグ＆ドロップ",
@@ -764,6 +734,9 @@ else:
             png_bytes = fig_to_png_bytes(fig)
             csv_bytes = df_to_csv_bytes(summary_df)
 
+            # figはPNG化したらすぐ閉じる
+            plt.close(fig)
+
             c1, c2, c3 = st.columns([1, 1, 2])
             with c1:
                 st.metric("Symbol", symbol)
@@ -772,10 +745,10 @@ else:
             with c3:
                 st.write(f"生成時刻: {timestamp}")
 
-            st.pyplot(fig, use_container_width=True)
+            st.image(png_bytes, caption=f"{symbol} GEX Profile", width="stretch")
 
             st.subheader("集計テーブル")
-            st.dataframe(summary_df, use_container_width=True)
+            st.dataframe(summary_df, width="stretch")
 
             d1, d2 = st.columns(2)
             with d1:
@@ -792,8 +765,6 @@ else:
                     file_name=f"{symbol}_summary_{timestamp}.csv",
                     mime="text/csv"
                 )
-
-            plt.close(fig)
 
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
