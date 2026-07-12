@@ -3,8 +3,6 @@ from datetime import datetime
 
 import numpy as np
 import pandas as pd
-from scipy.stats import norm
-from scipy.stats import norm
 
 import matplotlib
 matplotlib.use("Agg")  # Streamlit用
@@ -43,7 +41,7 @@ PATTERNS = [
 
 
 # =========================================================
-# 入力読み込み
+# アップロードファイル読み込み
 # =========================================================
 def read_uploaded_table(uploaded_file):
     name = uploaded_file.name.lower()
@@ -68,6 +66,7 @@ def validate_required_columns(df):
         "Side",
         "Type",
     ]
+
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise KeyError(
@@ -135,7 +134,7 @@ def filter_dte(df, dte_range):
 
 
 # =========================================================
-# フロー
+# フロー集計
 # =========================================================
 def flow_detail(df_raw, strike, opt_type=None):
     sub = df_raw[df_raw["Strike"] == strike]
@@ -184,6 +183,13 @@ def flow_full(ask, bid, mid):
 
 
 # =========================================================
+# 正規分布PDF（scipy代替）
+# =========================================================
+def norm_pdf(x):
+    return np.exp(-0.5 * x * x) / np.sqrt(2.0 * np.pi)
+
+
+# =========================================================
 # BS Gamma / GEX
 # =========================================================
 def bs_gamma(S, K, T, r, q, sigma):
@@ -191,7 +197,7 @@ def bs_gamma(S, K, T, r, q, sigma):
         return 0.0
 
     d1 = (np.log(S / K) + (r - q + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
-    gamma = np.exp(-q * T) * norm.pdf(d1) / (S * sigma * np.sqrt(T))
+    gamma = np.exp(-q * T) * norm_pdf(d1) / (S * sigma * np.sqrt(T))
     return gamma
 
 
@@ -379,7 +385,7 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
 
 
 # =========================================================
-# 描画
+# 1パネル描画
 # =========================================================
 def plot_panel(
     ax,
@@ -527,6 +533,9 @@ def plot_panel(
         ax.legend(loc="lower right", fontsize=7, framealpha=0.95)
 
 
+# =========================================================
+# 図と集計表を作る
+# =========================================================
 def build_figure_and_summary(df, top_n, risk_free, div_yield):
     S = float(df["Price~"].iloc[0])
     symbol = get_symbol(df)
@@ -643,10 +652,12 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
     plt.tight_layout(rect=[0, 0, 1, 0.94])
 
     summary_df = pd.DataFrame(summary_rows)
-
     return fig, summary_df, symbol, S, timestamp
 
 
+# =========================================================
+# ダウンロード用変換
+# =========================================================
 def fig_to_png_bytes(fig):
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
