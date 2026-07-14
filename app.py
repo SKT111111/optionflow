@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 import matplotlib
-matplotlib.use("Agg")  # Streamlit向けの非GUIバックエンド
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import matplotlib.font_manager as fm
@@ -26,19 +26,12 @@ st.set_page_config(
 
 # =========================================================
 # 日本語フォント設定
-# 同梱フォントを1本だけ使う
 # =========================================================
 BASE_DIR = Path(__file__).resolve().parent
 FONT_PATH = BASE_DIR / "fonts" / "NotoSansJP-Regular.ttf"
 
 
 def setup_japanese_font():
-    """
-    同梱フォントをMatplotlibに登録する。
-    戻り値:
-        font_name: 認識されたフォント名 or None
-        font_found: True / False
-    """
     if FONT_PATH.exists():
         fm.fontManager.addfont(str(FONT_PATH))
         font_name = fm.FontProperties(fname=str(FONT_PATH)).get_name()
@@ -293,7 +286,7 @@ def find_hvl(S, net):
 
 
 # =========================================================
-# ラベル重なり回避
+# ラベル・表示レンジ関連
 # =========================================================
 def spread_label_positions(levels, y_min, y_max, min_gap):
     if not levels:
@@ -382,77 +375,41 @@ def build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow):
     return items
 
 
-# =========================================================
-# 1パネル描画
-# =========================================================
-def plot_panel(
-    ax,
-    S,
-    net,
-    sub_raw,
-    call_walls,
-    put_walls,
-    hvl,
-    total,
-    label,
-    spot_flow="",
-    show_legend=False,
-    global_ylim=None
-):
+def get_x_limits(net):
     if net.empty:
-        ax.text(
-            0.5, 0.5, "データなし",
-            ha="center", va="center",
-            transform=ax.transAxes,
-            fontsize=12
-        )
-        ax.set_title(label)
-        return
+        return (-1, 1)
 
-    net = net.copy()
-    net["GEX_M"] = net["GEX"] / 1e6
-
-    colors = ["#2ca02c" if v >= 0 else "#d62728" for v in net["GEX_M"]]
-
-    diff_med = net["Strike"].diff().median()
-    if pd.isna(diff_med) or diff_med <= 0:
-        bar_h = 0.8
-    else:
-        bar_h = diff_med * 0.8
-
-    ax.barh(
-        net["Strike"],
-        net["GEX_M"],
-        color=colors,
-        height=bar_h,
-        edgecolor="black",
-        linewidth=0.3,
-        alpha=0.85,
-        zorder=2
-    )
-
-    raw_xmax = max(float(net["GEX_M"].max()), 0.0)
-    raw_xmin = min(float(net["GEX_M"].min()), 0.0)
+    gex_m = net["GEX"] / 1e6
+    raw_xmax = max(float(gex_m.max()), 0.0)
+    raw_xmin = min(float(gex_m.min()), 0.0)
     x_span = max(raw_xmax - raw_xmin, 1.0)
 
-    right_pad = x_span * 0.42
     left_pad = x_span * 0.08
+    right_pad = x_span * 0.42
 
-    x_left = raw_xmin - left_pad
-    x_right = raw_xmax + right_pad
-    ax.set_xlim(x_left, x_right)
+    return raw_xmin - left_pad, raw_xmax + right_pad
 
-    if global_ylim is not None:
-        ax.set_ylim(global_ylim)
 
-    ymin, ymax = ax.get_ylim()
+def get_zoom_ylim(S, call_walls, put_walls):
+    focus_levels = [S]
+    focus_levels += [k for k, _ in call_walls]
+    focus_levels += [k for k, _ in put_walls]
 
-    if call_walls and put_walls:
-        lo, hi = sorted([put_walls[0][0], call_walls[0][0]])
-        ax.axhspan(lo, hi, color="#ffbf00", alpha=0.08, zorder=0, label="Transition Zone")
+    if not focus_levels:
+        return (max(0, S - 30), S + 30)
 
-    label_items = build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow)
+    lo = min(focus_levels)
+    hi = max(focus_levels)
+    span = max(hi - lo, 1.0)
 
+    pad = max(span * 0.35, S * 0.08, 20.0)
+    y_min = max(0, lo - pad)
+    y_max = hi + pad
+
+    return (y_min, y_max)
+
+
+def draw_reference_lines(ax, label_items, show_legend=False):
     legend_used = {"cw": False, "pw": False, "hvl": False, "spot": False}
 
     for item in label_items:
@@ -485,18 +442,83 @@ def plot_panel(
 
     ax.axvline(0, color="gray", lw=0.7, zorder=1)
 
-    if "0DTE" in label or "当日" in label:
-        min_gap = (ymax - ymin) * 0.045
-    else:
-        min_gap = (ymax - ymin) * 0.028
+    if show_legend:
+        ax.legend(loc="lower right", fontsize=7, framealpha=0.95)
 
-    levels = [(item["key"], item["y"]) for item in label_items]
+
+def draw_bars(ax, net):
+    if net.empty:
+        return
+
+    net = net.copy()
+    net["GEX_M"] = net["GEX"] / 1e6
+    colors = ["#2ca02c" if v >= 0 else "#d62728" for v in net["GEX_M"]]
+
+    diff_med = net["Strike"].diff().median()
+    if pd.isna(diff_med) or diff_med <= 0:
+        bar_h = 0.8
+    else:
+        bar_h = diff_med * 0.8
+
+    ax.barh(
+        net["Strike"],
+        net["GEX_M"],
+        color=colors,
+        height=bar_h,
+        edgecolor="black",
+        linewidth=0.3,
+        alpha=0.85,
+        zorder=2
+    )
+
+
+def plot_zoom_panel(
+    ax,
+    S,
+    net,
+    sub_raw,
+    call_walls,
+    put_walls,
+    hvl,
+    total,
+    label,
+    spot_flow,
+    zoom_ylim,
+    xlim,
+    show_legend=False
+):
+    if net.empty:
+        ax.text(0.5, 0.5, "データなし", ha="center", va="center", transform=ax.transAxes, fontsize=12)
+        ax.set_title(f"{label}\nZoom")
+        return
+
+    draw_bars(ax, net)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*zoom_ylim)
+
+    if call_walls and put_walls:
+        lo, hi = sorted([put_walls[0][0], call_walls[0][0]])
+        ax.axhspan(lo, hi, color="#ffbf00", alpha=0.08, zorder=0)
+
+    label_items = build_label_items(sub_raw, call_walls, put_walls, hvl, S, spot_flow)
+    draw_reference_lines(ax, label_items, show_legend=show_legend)
+
+    visible_items = [item for item in label_items if zoom_ylim[0] <= item["y"] <= zoom_ylim[1]]
+
+    ymin, ymax = ax.get_ylim()
+    min_gap = (ymax - ymin) * 0.05 if ("0DTE" in label or "当日" in label) else (ymax - ymin) * 0.035
+    levels = [(item["key"], item["y"]) for item in visible_items]
     y_text_map = spread_label_positions(levels, ymin, ymax, min_gap)
 
-    x_anchor = raw_xmax + x_span * 0.02
-    x_text = raw_xmax + x_span * 0.36
+    x_left, x_right = xlim
+    x_span = x_right - x_left
+    gex_m = net["GEX"] / 1e6
+    raw_xmax = max(float(gex_m.max()), 0.0)
 
-    for item in label_items:
+    x_anchor = raw_xmax + x_span * 0.01
+    x_text = raw_xmax + x_span * 0.22
+
+    for item in visible_items:
         key = item["key"]
         y_actual = item["y"]
         y_text = y_text_map[key]
@@ -520,14 +542,55 @@ def plot_panel(
             clip_on=False
         )
 
+    if hvl is not None and not (zoom_ylim[0] <= hvl <= zoom_ylim[1]):
+        ax.text(
+            0.98, 0.02,
+            f"HVL: {hvl:.1f} は overview 参照",
+            transform=ax.transAxes,
+            ha="right",
+            va="bottom",
+            fontsize=6.5,
+            color="#1f77b4"
+        )
+
     regime = "+γ (安定)" if (hvl is not None and S > hvl) else "-γ (増幅)"
     ax.set_title(f"{label}\ntotalGEX {total / 1e6:.0f}M  レジーム {regime}", fontsize=10)
     ax.set_xlabel("NET GEX (M)  ← Put優勢 / Call優勢 →")
     ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}"))
     ax.grid(axis="x", ls=":", alpha=0.4, zorder=0)
 
-    if show_legend:
-        ax.legend(loc="lower right", fontsize=7, framealpha=0.95)
+
+def plot_overview_panel(
+    ax,
+    S,
+    net,
+    sub_raw,
+    call_walls,
+    put_walls,
+    hvl,
+    label,
+    zoom_ylim,
+    global_ylim,
+    xlim
+):
+    if net.empty:
+        ax.text(0.5, 0.5, "データなし", ha="center", va="center", transform=ax.transAxes, fontsize=11)
+        ax.set_title("Overview")
+        return
+
+    draw_bars(ax, net)
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*global_ylim)
+
+    label_items = build_label_items(sub_raw, call_walls, put_walls, hvl, S, "")
+    draw_reference_lines(ax, label_items, show_legend=False)
+
+    ax.axhspan(zoom_ylim[0], zoom_ylim[1], color="#90caf9", alpha=0.14, zorder=0)
+
+    ax.set_title("Overview", fontsize=9)
+    ax.set_xlabel("NET GEX (M)")
+    ax.xaxis.set_major_formatter(mticker.FuncFormatter(lambda x, _: f"{x:.0f}"))
+    ax.grid(axis="x", ls=":", alpha=0.3, zorder=0)
 
 
 # =========================================================
@@ -576,22 +639,30 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
             "total": total,
             "spot_flow": spot_flow,
             "spot_flow_full": spot_flow_full,
+            "xlim": get_x_limits(net),
+            "zoom_ylim": get_zoom_ylim(S, call_walls, put_walls),
         })
 
     if all_y_values:
         y_min = min(all_y_values)
         y_max = max(all_y_values)
         y_pad = max((y_max - y_min) * 0.05, 1.0)
-        global_ylim = (y_min - y_pad, y_max + y_pad)
+        global_ylim = (max(0, y_min - y_pad), y_max + y_pad)
     else:
-        global_ylim = None
+        global_ylim = (0, 1)
 
-    fig, axes = plt.subplots(1, len(PATTERNS), figsize=(18, 8), sharey=True)
-    axes[0].set_ylabel("Strike")
+    fig, axes = plt.subplots(
+        2, len(PATTERNS),
+        figsize=(20, 10),
+        gridspec_kw={"height_ratios": [2.3, 1.0]},
+    )
 
     summary_rows = []
 
-    for i, (ax, pdata) in enumerate(zip(axes, panel_data)):
+    for i, pdata in enumerate(panel_data):
+        ax_zoom = axes[0, i]
+        ax_over = axes[1, i]
+
         label = pdata["label"]
         sub = pdata["sub"]
         net = pdata["net"]
@@ -601,9 +672,11 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
         total = pdata["total"]
         spot_flow = pdata["spot_flow"]
         spot_flow_full = pdata["spot_flow_full"]
+        xlim = pdata["xlim"]
+        zoom_ylim = pdata["zoom_ylim"]
 
-        plot_panel(
-            ax=ax,
+        plot_zoom_panel(
+            ax=ax_zoom,
             S=S,
             net=net,
             sub_raw=sub,
@@ -613,16 +686,40 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
             total=total,
             label=label,
             spot_flow=spot_flow,
-            show_legend=(i == 0),
-            global_ylim=global_ylim
+            zoom_ylim=zoom_ylim,
+            xlim=xlim,
+            show_legend=(i == 0)
         )
+
+        plot_overview_panel(
+            ax=ax_over,
+            S=S,
+            net=net,
+            sub_raw=sub,
+            call_walls=call_walls,
+            put_walls=put_walls,
+            hvl=hvl,
+            label=label,
+            zoom_ylim=zoom_ylim,
+            global_ylim=global_ylim,
+            xlim=xlim
+        )
+
+        if i == 0:
+            ax_zoom.set_ylabel("Strike (zoom)")
+            ax_over.set_ylabel("Strike (all)")
+        else:
+            ax_zoom.tick_params(axis="y", labelleft=False)
+            ax_over.tick_params(axis="y", labelleft=False)
 
         row = {
             "Pattern": label,
             "Spot": S,
             "HVL": hvl,
             "totalGEX_M": round(total / 1e6, 2),
-            "Spot_flow": spot_flow_full
+            "Spot_flow": spot_flow_full,
+            "Zoom_min": round(zoom_ylim[0], 2),
+            "Zoom_max": round(zoom_ylim[1], 2),
         }
 
         for j, (k, g) in enumerate(call_walls, 1):
@@ -641,10 +738,10 @@ def build_figure_and_summary(df, top_n, risk_free, div_yield):
 
     fig.suptitle(
         f"{symbol} GEX Profile 満期別  |  Spot {S:.2f}  |  {timestamp}\n"
-        f"（各Wall脇 [買優勢/売優勢/拮抗] = 当日フローの傾き・参考）",
+        f"上段=Spot近辺ズーム / 下段=全体俯瞰",
         fontsize=12
     )
-    plt.tight_layout(rect=[0, 0, 1, 0.94])
+    plt.tight_layout(rect=[0, 0, 1, 0.95])
 
     summary_df = pd.DataFrame(summary_rows)
     return fig, summary_df, symbol, S, timestamp
@@ -668,7 +765,7 @@ def df_to_csv_bytes(df):
 # UI
 # =========================================================
 st.title("📈 GEX Profile Viewer")
-st.caption("CSV / Excel をドラッグ＆ドロップすると、満期別の GEX 4パネル画像を表示します。")
+st.caption("CSV / Excel をドラッグ＆ドロップすると、各満期を『Spot近辺ズーム + 全体俯瞰』で表示します。")
 
 with st.sidebar:
     st.subheader("設定")
@@ -726,7 +823,7 @@ else:
 
             st.image(
                 st.session_state["png_bytes"],
-                caption=f"{symbol} GEX Profile",
+                caption=f"{symbol} GEX Profile (Zoom + Overview)"
             )
 
             st.subheader("集計テーブル")
@@ -737,7 +834,7 @@ else:
                 st.download_button(
                     label="画像をダウンロード (PNG)",
                     data=st.session_state["png_bytes"],
-                    file_name=f"{st.session_state['symbol']}_gex_by_expiry_{st.session_state['timestamp']}.png",
+                    file_name=f"{st.session_state['symbol']}_gex_zoom_overview_{st.session_state['timestamp']}.png",
                     mime="image/png",
                     on_click="ignore"
                 )
