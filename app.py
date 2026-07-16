@@ -54,7 +54,7 @@ DEFAULT_RISK_FREE = 0.045
 DEFAULT_DIV_YIELD = 0.0
 
 PATTERNS = [
-    ("当日 (0DTE)",      (0, 0)),
+    ("当日 (0DTE)",      (0, 1)),    # Exp Date から計算するDTEは小数のため1日以内で判定
     ("1週間以内 (0-7)",  (0, 7)),
     ("1ヶ月以内 (0-30)", (0, 30)),
     ("全満期",           (0, None)),
@@ -121,6 +121,13 @@ def validate_required_columns(df):
 def load_data_from_upload(uploaded_file):
     df = read_uploaded_table(uploaded_file)
     df.columns = [str(c).strip() for c in df.columns]
+
+    # DTE が無ければ Exp Date から計算して補完する
+    if "DTE" not in df.columns and "Exp Date" in df.columns:
+        exp = pd.to_datetime(df["Exp Date"], errors="coerce", utc=True)
+        now = pd.Timestamp.now(tz="UTC")
+        df["DTE"] = (exp - now).dt.total_seconds() / 86400.0
+        df["DTE"] = df["DTE"].clip(lower=0)
 
     validate_required_columns(df)
 
