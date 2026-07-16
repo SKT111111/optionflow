@@ -64,14 +64,35 @@ PATTERNS = [
 # =========================================================
 # 入力読み込み
 # =========================================================
+def _strip_barchart_footer(df):
+    """
+    Barchart CSV は末尾に
+    'Downloaded from Barchart.com as of ...'
+    という1列だけの行が入るので除去する。
+    """
+    if df.empty:
+        return df
+
+    first_col = df.columns[0]
+    mask = df[first_col].astype(str).str.contains(
+        "Downloaded from Barchart", case=False, na=False
+    )
+    if mask.any():
+        df = df[~mask].copy()
+
+    return df
+
+
 def read_uploaded_table(uploaded_file):
     name = uploaded_file.name.lower()
 
     if name.endswith(".csv") or name.endswith(".txt"):
-        return pd.read_csv(uploaded_file)
+        df = pd.read_csv(uploaded_file)
+        return _strip_barchart_footer(df)
 
     if name.endswith(".xlsx") or name.endswith(".xls"):
-        return pd.read_excel(uploaded_file)
+        df = pd.read_excel(uploaded_file)
+        return _strip_barchart_footer(df)
 
     raise ValueError("未対応のファイル形式です。.csv / .xlsx / .xls を使ってください。")
 
@@ -102,6 +123,11 @@ def load_data_from_upload(uploaded_file):
     df.columns = [str(c).strip() for c in df.columns]
 
     validate_required_columns(df)
+
+    # 主要な数値列がすべて欠損している行（脚注等）を除去する保険
+    key_cols = [c for c in ["Price~", "Strike", "Open Int", "DTE"] if c in df.columns]
+    if key_cols:
+        df = df.dropna(subset=key_cols, how="all").copy()
 
     if "Symbol" not in df.columns:
         df["Symbol"] = "UNKNOWN"
