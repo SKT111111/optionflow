@@ -60,6 +60,8 @@ FONT_NAME, FONT_FOUND = setup_japanese_font()
 DEFAULT_RISK_FREE = 0.045
 DEFAULT_DIV_YIELD = 0.0
 MAJOR_MONTHS = (3, 6, 9, 12)  # メジャーSQ(四半期末)の月
+SIZE_OPTIONS = [1000, 2000, 3000]
+DEFAULT_SIZE_INDEX = 1  # 2000
 
 
 # =========================================================
@@ -76,17 +78,13 @@ def is_major_sq(d):
 
 
 def pick_front_expiry(exp_dates, base_date):
-    """
-    基準日以降で最も近い第3金曜(月次満期)を選ぶ。無ければ None。
-    """
+    """基準日以降で最も近い第3金曜(月次満期)を選ぶ。無ければ None。"""
     future = sorted(d for d in exp_dates if d >= base_date)
     return next((d for d in future if is_third_friday(d)), None)
 
 
 def next_major_sq(exp_dates, after_date):
-    """
-    after_date より後(含まず)で最も近いメジャーSQを返す。無ければ None。
-    """
+    """after_date より後(含まず)で最も近いメジャーSQを返す。無ければ None。"""
     future = sorted(d for d in exp_dates if d > after_date)
     return next((d for d in future if is_major_sq(d)), None)
 
@@ -135,9 +133,7 @@ def strip_barchart_footer(df):
 
 
 def read_uploaded_table(uploaded_file):
-    """
-    ファイルを読み込み、(データ本体df, 基準日base_date) を返す。
-    """
+    """ファイルを読み込み、(データ本体df, 基準日base_date) を返す。"""
     name = uploaded_file.name.lower()
 
     if name.endswith(".csv") or name.endswith(".txt"):
@@ -212,6 +208,8 @@ def load_data_from_upload(uploaded_file):
     df["Open Int"] = pd.to_numeric(df["Open Int"], errors="coerce")
     df["DTE"] = pd.to_numeric(df["DTE"], errors="coerce")
     df["Volume"] = pd.to_numeric(df["Volume"], errors="coerce")
+    if "Size" in df.columns:
+        df["Size"] = pd.to_numeric(df["Size"], errors="coerce")
 
     df["IV"] = (
         df["IV"].astype(str).str.rstrip("%").replace("nan", np.nan)
@@ -416,7 +414,6 @@ def get_zoom_ylim(S, call_walls, put_walls, hvl=None):
     focus_levels += [k for k, _ in call_walls]
     focus_levels += [k for k, _ in put_walls]
     if hvl is not None:
-        # 近いHVLだけ含める(遠いHVLに引っ張られて広がるのを防ぐ)
         if abs(hvl - S) <= max(S * 0.10, 15):
             focus_levels.append(hvl)
 
@@ -424,7 +421,6 @@ def get_zoom_ylim(S, call_walls, put_walls, hvl=None):
     hi = max(focus_levels)
     span = max(hi - lo, 1.0)
 
-    # 余白はデータの広がりに比例。固定の大きな値は使わない。
     pad = max(span * 0.25, S * 0.015, 2.0)
     return max(0, lo - pad), hi + pad
 
@@ -624,7 +620,6 @@ def plot_zoom_panel(
             zorder=4, clip_on=False
         )
 
-    # 範囲外に出たウォール/HVLがあれば注記
     out_items = [item for item in label_items
                  if not (ylim[0] <= item["y"] <= ylim[1]) and item["key"] != "spot"]
     if out_items:
@@ -645,7 +640,7 @@ def plot_zoom_panel(
     ax.grid(axis="x", ls=":", alpha=0.4, zorder=0)
 
 
-def build_zoom_figure(panel_data, symbol, S, timestamp, base_date):
+def build_zoom_figure(panel_data, symbol, S, timestamp, base_date, subtitle="Spot近辺ズーム"):
     n = len(panel_data)
     fig, axes = plt.subplots(1, n, figsize=(10 * n, 6), sharey=False)
     if n == 1:
@@ -665,7 +660,7 @@ def build_zoom_figure(panel_data, symbol, S, timestamp, base_date):
 
     fig.suptitle(
         f"{symbol} GEX Profile  |  Spot {S:.2f}  |  基準日 {base_date}  |  {timestamp}\n"
-        f"Spot近辺ズーム（パネルごとに縦軸を最適化）",
+        f"{subtitle}",
         fontsize=12
     )
     plt.tight_layout(rect=[0, 0, 1, 0.90])
@@ -711,8 +706,11 @@ def build_expiry_patterns(df, base_date):
 # =========================================================
 # パネルデータまとめ
 # =========================================================
-def build_panel_data(df, base_date, top_n, risk_free, div_yield):
-    S = float(df["Price~"].iloc[0])
+def build_panel_data(df, base_date, top_n, risk_free, div_yield, spot_override=None):
+    if spot_override is not None:
+        S = float(spot_override)
+    else:
+        S = float(df["Price~"].iloc[0])
     symbol = get_symbol(df)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
@@ -787,13 +785,22 @@ def df_to_csv_bytes(df):
 # UI
 # =========================================================
 st.title("📈 GEX Profile Viewer")
-st.caption("CSV / Excel をドラッグ＆ドロップすると、『直近の節目(SQ/MSQ)』と『全満期』のSpot近辺ズームを表示します。")
+st.caption("上段は全データ、下段は Size フィルターをかけた大口のみで、直近の節目(SQ/MSQ)と全満期のズームを表示します。")
 
 with st.sidebar:
     st.subheader("設定")
     top_n = st.slider("表示する Wall の本数", min_value=1, max_value=5, value=3, step=1)
     risk_free = st.number_input("無リスク金利", value=DEFAULT_RISK_FREE, step=0.005, format="%.4f")
     div_yield = st.number_input("配当利回り", value=DEFAULT_DIV_YIELD, step=0.005, format="%.4f")
+
+    st.divider()
+    st.subheader("大口フィルター (下段の図)")
+    size_threshold = st.radio(
+        "Size がこの値以上の注文だけを使う",
+        options=SIZE_OPTIONS,
+        index=DEFAULT_SIZE_INDEX,
+        horizontal=True,
+    )
 
     st.divider()
     st.subheader("フォント状態")
@@ -818,21 +825,42 @@ else:
         if df.empty:
             st.warning("有効な行がありません。IV > 0 のオプションデータを確認してください。")
         else:
+            # ---- 全データ版(上段) ----
             panel_data, summary_df, symbol, spot, timestamp = build_panel_data(
                 df=df, base_date=base_date, top_n=top_n,
                 risk_free=risk_free, div_yield=div_yield
             )
-
-            zoom_fig = build_zoom_figure(panel_data, symbol, spot, timestamp, base_date)
+            zoom_fig = build_zoom_figure(
+                panel_data, symbol, spot, timestamp, base_date,
+                subtitle="Spot近辺ズーム（全データ）"
+            )
             zoom_png = fig_to_png_bytes(zoom_fig)
-            csv_bytes = df_to_csv_bytes(summary_df)
             plt.close(zoom_fig)
 
-            st.session_state["zoom_png"] = zoom_png
-            st.session_state["csv_bytes"] = csv_bytes
-            st.session_state["symbol"] = symbol
-            st.session_state["timestamp"] = timestamp
+            # ---- Sizeフィルター版(下段) ----
+            if "Size" in df.columns:
+                df_big = df[df["Size"] >= size_threshold].copy()
+            else:
+                df_big = df.iloc[0:0].copy()
 
+            big_zoom_png = None
+            big_summary_df = None
+            if not df_big.empty:
+                big_panel_data, big_summary_df, _, _, big_timestamp = build_panel_data(
+                    df=df_big, base_date=base_date, top_n=top_n,
+                    risk_free=risk_free, div_yield=div_yield,
+                    spot_override=spot  # Spotは全データと共通に固定
+                )
+                big_zoom_fig = build_zoom_figure(
+                    big_panel_data, symbol, spot, big_timestamp, base_date,
+                    subtitle=f"Spot近辺ズーム（Size {size_threshold} 以上の大口）"
+                )
+                big_zoom_png = fig_to_png_bytes(big_zoom_fig)
+                plt.close(big_zoom_fig)
+
+            csv_bytes = df_to_csv_bytes(summary_df)
+
+            # ---- ヘッダ情報 ----
             c1, c2, c3, c4 = st.columns([1, 1, 1, 2])
             with c1:
                 st.metric("Symbol", symbol)
@@ -844,28 +872,60 @@ else:
                 st.write(f"基準日ソース: {base_date_source}")
                 st.write(f"生成時刻: {timestamp}")
 
-            st.subheader("Spot近辺ズーム")
-            st.image(st.session_state["zoom_png"],
-                     caption=f"{symbol} GEX Profile - Zoom")
-
+            # ---- 上段: 全データ ----
+            st.subheader("Spot近辺ズーム（全データ）")
+            st.image(zoom_png, caption=f"{symbol} GEX Profile - Zoom (全データ)")
             st.download_button(
-                label="ズーム画像をダウンロード (PNG)",
-                data=st.session_state["zoom_png"],
-                file_name=f"{st.session_state['symbol']}_gex_zoom_{st.session_state['timestamp']}.png",
+                label="全データ版ズーム画像をダウンロード (PNG)",
+                data=zoom_png,
+                file_name=f"{symbol}_gex_zoom_all_{timestamp}.png",
                 mime="image/png",
                 on_click="ignore"
             )
 
-            st.subheader("集計テーブル")
-            st.dataframe(summary_df, width="stretch")
+            # ---- 下段: Sizeフィルター ----
+            st.divider()
+            st.subheader(f"Spot近辺ズーム（Size {size_threshold} 以上の大口）")
+            if big_zoom_png is None:
+                st.info(
+                    f"Size {size_threshold} 以上の有効なデータがありません。"
+                    "サイドバーでフィルター値を下げてみてください。"
+                )
+            else:
+                st.image(
+                    big_zoom_png,
+                    caption=f"{symbol} GEX Profile - Zoom (Size≥{size_threshold})"
+                )
+                st.download_button(
+                    label=f"大口版(Size≥{size_threshold})ズーム画像をダウンロード (PNG)",
+                    data=big_zoom_png,
+                    file_name=f"{symbol}_gex_zoom_size{size_threshold}_{timestamp}.png",
+                    mime="image/png",
+                    on_click="ignore"
+                )
 
+            # ---- 集計テーブル ----
+            st.divider()
+            st.subheader("集計テーブル（全データ）")
+            st.dataframe(summary_df, width="stretch")
             st.download_button(
                 label="集計をダウンロード (CSV)",
-                data=st.session_state["csv_bytes"],
-                file_name=f"{st.session_state['symbol']}_summary_{st.session_state['timestamp']}.csv",
+                data=csv_bytes,
+                file_name=f"{symbol}_summary_all_{timestamp}.csv",
                 mime="text/csv",
                 on_click="ignore"
             )
+
+            if big_summary_df is not None:
+                st.subheader(f"集計テーブル（Size {size_threshold} 以上）")
+                st.dataframe(big_summary_df, width="stretch")
+                st.download_button(
+                    label=f"大口集計(Size≥{size_threshold})をダウンロード (CSV)",
+                    data=df_to_csv_bytes(big_summary_df),
+                    file_name=f"{symbol}_summary_size{size_threshold}_{timestamp}.csv",
+                    mime="text/csv",
+                    on_click="ignore"
+                )
 
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
