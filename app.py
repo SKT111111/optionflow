@@ -518,11 +518,15 @@ def draw_bars(ax, net):
     tmp["GEX_M"] = tmp["GEX"] / 1e6
     colors = ["#2ca02c" if v >= 0 else "#d62728" for v in tmp["GEX_M"]]
 
-    diff_med = tmp["Strike"].diff().median()
-    if pd.isna(diff_med) or diff_med <= 0:
+    # 隣り合う Strike 間隔の「最小値」を基準にして棒が重ならないようにする
+    diffs = tmp["Strike"].sort_values().diff().dropna()
+    diffs = diffs[diffs > 0]
+
+    if diffs.empty:
         bar_h = 0.8
     else:
-        bar_h = diff_med * 0.8
+        min_gap = float(diffs.min())
+        bar_h = min_gap * 0.8  # 最小間隔の 80% までに抑える
 
     ax.barh(
         tmp["Strike"], tmp["GEX_M"],
