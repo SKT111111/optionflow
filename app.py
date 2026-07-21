@@ -60,8 +60,8 @@ FONT_NAME, FONT_FOUND = setup_japanese_font()
 DEFAULT_RISK_FREE = 0.045
 DEFAULT_DIV_YIELD = 0.0
 MAJOR_MONTHS = (3, 6, 9, 12)  # メジャーSQ(四半期末)の月
-SIZE_OPTIONS = [1000, 2000, 3000]
-DEFAULT_SIZE_INDEX = 1  # 2000
+SIZE_OPTIONS = [500, 800, 900, 1000, 2000, 3000]
+DEFAULT_SIZE_INDEX = 3  # 1000
 
 
 # =========================================================
@@ -799,7 +799,7 @@ with st.sidebar:
         "Size がこの値以上の注文だけを使う",
         options=SIZE_OPTIONS,
         index=DEFAULT_SIZE_INDEX,
-        horizontal=True,
+        horizontal=False,
     )
 
     st.divider()
